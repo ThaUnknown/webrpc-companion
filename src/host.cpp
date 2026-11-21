@@ -31,11 +31,12 @@ int Host::run() {
 
     {
         JsonWriter json;
-        json.string("type", "hello");
+        json.string("message", "hello");
+        json.beginObject("data");
         json.number("protocol", PROTOCOL_VERSION);
         json.string("version", VENCORD_RPC_VERSION);
         json.string("installPath", pathToUtf8(executablePath()));
-        json.boolean("gameDetection", true);
+        json.endObject();
         send(json.finish());
     }
 
@@ -55,61 +56,52 @@ void Host::handleMessage(std::string_view message) {
     }
 
     yyjson_val* root = yyjson_doc_get_root(doc.get());
-    const std::string_view type = jsonString(root, "type");
+    const std::string_view command = jsonString(root, "message");
+    yyjson_val* data = yyjson_obj_get(root, "data");
 
-    if (type == "ready") {
-        onReady(jsonBool(root, "gameDetection", true));
-    } else if (type == "configure") {
-        const bool enabled = jsonBool(root, "gameDetection", true);
-        if (rendererReady && enabled != wantGameDetection) setGameDetection(enabled);
-    } else if (type == "detectable-db") {
-        const std::string_view database = jsonString(root, "json");
+    if (command == "ready") {
+        onReady();
+    } else if (command == "detectable-db") {
+        const std::string_view database = jsonString(data, "json");
         if (database.empty()) {
-            logMessage("The extension sent no detectable database: %s", std::string(jsonString(root, "error")).c_str());
+            logMessage("The extension sent no detectable database: %s", std::string(jsonString(data, "error")).c_str());
             return;
         }
 
-        if (detection.setDatabase(database) && rendererReady && wantGameDetection) detection.start();
-    } else if (type == "rpc-send") {
-        const auto id = parseId(jsonString(root, "id"));
-        const std::string_view payload = jsonString(root, "json");
+        if (detection.setDatabase(database) && rendererReady) detection.start();
+    } else if (command == "rpc:send") {
+        const auto id = parseId(jsonString(data, "id"));
+        const std::string_view payload = jsonString(data, "json");
         if (id && !payload.empty()) ipc.send(*id, std::string(payload));
-    } else if (type == "rpc-close") {
-        const auto id = parseId(jsonString(root, "id"));
-        const int code = (int)jsonInt(root, "code", CLOSE_NORMAL);
-        if (id) ipc.close(*id, code, std::string(jsonString(root, "message")));
-    } else if (type == "stop") {
+    } else if (command == "rpc:close") {
+        const auto id = parseId(jsonString(data, "id"));
+        const int code = (int)jsonInt(data, "code", CLOSE_NORMAL);
+        if (id) ipc.close(*id, code, std::string(jsonString(data, "message")));
+    } else if (command == "stop") {
         rendererReady = false;
         detection.stop();
         ipc.stop();
         ipcStarted = false;
-        sendType("games-reset");
-    } else if (type == "ping") {
-        sendType("pong");
+        sendCommand("rpc:reset");
+    } else if (command == "ping") {
+        sendCommand("pong");
     }
 }
 
-void Host::onReady(bool gameDetection) {
+void Host::onReady() {
     rendererReady = true;
 
     if (!ipcStarted) ipcStarted = ipc.start();
     else ipc.closeAll(CLOSE_NORMAL, "Renderer reloaded");
 
-    sendType("games-reset");
-    setGameDetection(gameDetection);
-}
-
-void Host::setGameDetection(bool enabled) {
-    wantGameDetection = enabled;
-    detection.stop();
-
-    if (enabled) detection.start();
-    else sendType("games-reset");
+    sendCommand("rpc:reset");
+    detection.start();
 }
 
 void Host::onGame(const DetectedGame& game, bool running) {
     JsonWriter json;
-    json.string("type", "game");
+    json.string("message", "rpc:game");
+    json.beginObject("data");
     json.beginObject("game");
     json.string("id", game.id);
     json.string("name", game.name);
@@ -117,14 +109,17 @@ void Host::onGame(const DetectedGame& game, bool running) {
     json.string("path", game.path);
     json.endObject();
     json.boolean("running", running);
+    json.endObject();
     send(json.finish());
 }
 
 void Host::onIpcConnect(uint64_t id, const std::string& clientId, int version) {
     JsonWriter json;
-    json.string("type", "rpc-connect");
+    json.string("message", "rpc:connect");
+    json.beginObject("data");
     json.string("id", std::to_string(id));
-    json.beginObject("client");
+    json.null("origin");
+    json.string("transport", "ipc");
 
     if (clientId.empty()) json.null("clientId");
     else json.string("clientId", clientId);
@@ -136,16 +131,18 @@ void Host::onIpcConnect(uint64_t id, const std::string& clientId, int version) {
 
 void Host::onIpcRequest(uint64_t id, const std::string& payload) {
     JsonWriter json;
-    json.string("type", "rpc-request");
+    json.string("message", "rpc:request");
+    json.beginObject("data");
     json.string("id", std::to_string(id));
     json.string("payload", payload);
+    json.endObject();
     send(json.finish());
 }
 
 void Host::onIpcDisconnect(uint64_t id) {
     JsonWriter json;
-    json.string("type", "rpc-disconnect");
-    json.string("id", std::to_string(id));
+    json.string("message", "rpc:disconnect");
+    json.string("data", std::to_string(id));
     send(json.finish());
 }
 
@@ -153,8 +150,8 @@ void Host::send(const std::string& json) {
     native.write(json);
 }
 
-void Host::sendType(const char* type) {
+void Host::sendCommand(const char* message) {
     JsonWriter json;
-    json.string("type", type);
+    json.string("message", message);
     send(json.finish());
 }

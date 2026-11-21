@@ -9,7 +9,7 @@
 #define VENCORD_RPC_VERSION "1.0.0"
 #endif
 
-constexpr int PROTOCOL_VERSION = 1;
+constexpr int PROTOCOL_VERSION = 2;
 
 enum Opcode : int32_t {
     OP_HANDSHAKE = 0,

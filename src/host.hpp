@@ -18,17 +18,15 @@ public:
 
 private:
     void handleMessage(std::string_view message);
-    void onReady(bool gameDetection);
-    void setGameDetection(bool enabled);
+    void onReady();
     void onGame(const DetectedGame& game, bool running);
     void send(const std::string& json);
-    void sendType(const char* type);
+    void sendCommand(const char* message);
 
     NativeMessaging native;
     DiscordIpc ipc;
     GameDetection detection;
 
     bool rendererReady = false;
-    bool wantGameDetection = true;
     bool ipcStarted = false;
 };
