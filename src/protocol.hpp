@@ -6,7 +6,7 @@
 #define VENCORD_RPC_HOST_NAME "dev.vencord.rpc"
 
 #ifndef VENCORD_RPC_VERSION
-#define VENCORD_RPC_VERSION "0.2.0"
+#define VENCORD_RPC_VERSION "1.0.0"
 #endif
 
 constexpr int PROTOCOL_VERSION = 1;
